@@ -1,0 +1,1023 @@
+{
+  "name": "Invoice Intake & Approval - ClickUp Statuses + Email Buttons for upload",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Invoice Intake",
+        "formDescription": "Drop a PDF invoice. It is read by AI, validated, filed in ClickUp and reviewed by email.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Invoice PDF",
+              "fieldType": "file",
+              "multipleFiles": false,
+              "acceptFileTypes": ".pdf",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "buttonLabel": "Submit invoice"
+        }
+      },
+      "id": "52155a9f-af7d-4448-b121-455118af8c08",
+      "name": "Upload Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.5,
+      "position": [
+        16,
+        336
+      ],
+      "webhookId": "73b5ade8-cd80-4760-a03b-c2393502ef20",
+      "notesInFlow": true,
+      "notes": "Browser upload form served by n8n itself"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Normalise whatever the trigger gave us into: json.file_name + binary.data\nconst bin = $input.item.binary || {};\nconst key = Object.keys(bin)[0];\nif (!key) throw new Error('No file received - upload or drop a PDF invoice.');\nconst file = bin[key];\nconst name = file.fileName || 'invoice.pdf';\nconst looksPdf = String(file.mimeType || '').includes('pdf') || /\\.pdf$/i.test(name);\nif (!looksPdf) throw new Error('Only PDF files are supported, got: ' + name);\nreturn {\n  json: { file_name: name, source: $json.event ? 'folder' : 'form' },\n  binary: { data: file },\n};"
+      },
+      "id": "4d54b5ae-064c-47ae-b6ee-2b5524d4263b",
+      "name": "Prepare PDF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        336
+      ],
+      "notesInFlow": true,
+      "notes": "json.file_name + binary.data"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {
+          "joinPages": true
+        }
+      },
+      "id": "83914584-8506-41fe-b4db-e569876942b1",
+      "name": "Extract PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        464,
+        336
+      ],
+      "notesInFlow": true,
+      "notes": "PDF -> plain text (no OCR)"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "944aa440-8250-4aa9-8dff-340b1edc60da",
+              "name": "groq_api_key",
+              "value": "Your_groq_api_key_Here",
+              "type": "string"
+            },
+            {
+              "id": "42830794-7e8e-4be5-a19b-fa380e66544a",
+              "name": "groq_model",
+              "value": "Groq_Model_Here",
+              "type": "string"
+            },
+            {
+              "id": "c8427157-0166-4449-904e-64052e0d3114",
+              "name": "approver_email_Here",
+              "value": "Approver_Email_Here",
+              "type": "string"
+            },
+            {
+              "id": "485616a2-e8de-4b92-a121-195f55570178",
+              "name": "approval_timeout_minutes",
+              "value": 120,
+              "type": "number"
+            },
+            {
+              "id": "4cd2a6d9-a9a3-4b7d-b5ad-70a99acece53",
+              "name": "auto_approve_limit",
+              "value": 500,
+              "type": "number"
+            },
+            {
+              "id": "af048ed8-e414-4ccb-ae80-15e10e927041",
+              "name": "clickup_api_token",
+              "value": "Your_Clickup_Api_Token_Here",
+              "type": "string"
+            },
+            {
+              "id": "d02e7f28-3175-4fc2-9696-8b58a2d9d423",
+              "name": "clickup_list_id",
+              "value": "Your_Clickup_List_id_Here",
+              "type": "string"
+            },
+            {
+              "id": "e4a95b1c-0043-48e1-b458-6149b0c7f894",
+              "name": "status_submitted",
+              "value": "Submitted",
+              "type": "string"
+            },
+            {
+              "id": "33ed8654-1366-4701-8a00-425f5845972f",
+              "name": "status_reviewing",
+              "value": "Reviewing",
+              "type": "string"
+            },
+            {
+              "id": "9bf945fc-3188-44f5-8339-b6e4aa797512",
+              "name": "status_changes_needed",
+              "value": "Changes Needed",
+              "type": "string"
+            },
+            {
+              "id": "ab364441-3b21-470d-86fe-bd65ecb7dcb8",
+              "name": "status_approved",
+              "value": "Approved",
+              "type": "string"
+            },
+            {
+              "id": "167c5209-fb3b-450c-871a-c7705367aa0a",
+              "name": "status_rejected",
+              "value": "Rejected",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "8bbafdb2-15d9-4a8c-af75-bba3c234ed2a",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        688,
+        336
+      ],
+      "notesInFlow": true,
+      "notes": "ALL settings. The 5 status names must match your ClickUp list EXACTLY."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Config').first().json.groq_api_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: $('Config').first().json.groq_model,\n  temperature: 0,\n  response_format: { type: 'json_object' },\n  messages: [\n    { role: 'system', content: \"You are an accounts-payable assistant. Read the invoice text and return ONLY one JSON object (no markdown, no commentary) with exactly these keys: vendor (string), invoice_number (string), invoice_date (string, YYYY-MM-DD), currency (3-letter ISO code such as USD, EUR, GBP, PKR), subtotal (number), tax (number), total (number), line_items (array of objects with description, quantity, unit_price, amount), summary (one short sentence describing what was purchased). Use plain numbers without currency symbols or thousands separators. Use null for any value you cannot find. Never invent values.\" },\n    { role: 'user', content: 'Invoice text:\\n\\n' + String($json.text || '').slice(0, 9000) }\n  ]\n}) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "148fcb6b-a580-4b6c-a3c0-69de4b77acd0",
+      "name": "LLM Extract Fields",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        912,
+        336
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notesInFlow": true,
+      "notes": "OpenAI-compatible chat call, JSON mode, temperature 0"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const cfg = $('Config').first().json;\nconst fileName = $('Prepare PDF').first().json.file_name;\nconst pdfText = String($('Extract PDF Text').first().json.text || '');\n\n// ---------- 1. Read the LLM answer (JSON mode, but we still parse defensively) ----------\nconst msg = $json.choices && $json.choices[0] && $json.choices[0].message;\nconst raw = (msg && msg.content) || '';\nlet inv = {};\nconst problems = [];\ntry {\n  inv = JSON.parse(String(raw).replace(/```json|```/g, '').trim());\n} catch (e) {\n  problems.push('AI did not return valid JSON - extraction failed');\n}\nif (pdfText.trim().length < 20) {\n  problems.push('Almost no text found in the PDF (scanned image?)');\n}\n\n// ---------- 2. Normalise the fields ----------\nconst toNum = (v) => {\n  if (v === null || v === undefined || v === '') return null;\n  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^0-9.\\-]/g, ''));\n  return Number.isFinite(n) ? n : null;\n};\nconst round2 = (n) => Math.round(n * 100) / 100;\n\nconst lineItems = (Array.isArray(inv.line_items) ? inv.line_items : []).map((li) => ({\n  description: String((li && li.description) || ''),\n  quantity: toNum(li && li.quantity),\n  unit_price: toNum(li && li.unit_price),\n  amount: toNum(li && li.amount),\n}));\n\nconst rec = {\n  vendor: inv.vendor ? String(inv.vendor).trim() : null,\n  invoice_number: inv.invoice_number ? String(inv.invoice_number).trim() : null,\n  invoice_date: inv.invoice_date ? String(inv.invoice_date).trim() : null,\n  currency: inv.currency ? String(inv.currency).trim().toUpperCase() : null,\n  subtotal: toNum(inv.subtotal),\n  tax: toNum(inv.tax),\n  total: toNum(inv.total),\n  summary: inv.summary ? String(inv.summary).trim() : '',\n};\n\n// ---------- 3. Validation rules ----------\nif (!rec.vendor) problems.push('Vendor missing');\nif (!rec.invoice_number) problems.push('Invoice number missing');\nif (rec.total === null) problems.push('Total missing');\nelse if (rec.total <= 0) problems.push('Total is zero or negative');\n\nconst lineSum = lineItems.reduce((s, li) => s + (li.amount || 0), 0);\nif (rec.subtotal !== null && lineItems.length > 0 && Math.abs(lineSum - rec.subtotal) > 0.02) {\n  problems.push('Line items (' + round2(lineSum) + ') do not add up to subtotal (' + rec.subtotal + ')');\n}\nif (rec.subtotal !== null && rec.total !== null) {\n  const expected = round2(rec.subtotal + (rec.tax || 0));\n  if (Math.abs(expected - rec.total) > 0.02) {\n    problems.push('Subtotal + tax (' + expected + ') does not equal total (' + rec.total + ')');\n  }\n}\nif (rec.invoice_date) {\n  const t = Date.parse(rec.invoice_date);\n  if (isNaN(t)) problems.push('Invoice date is not a valid date');\n  else if (t > Date.now() + 86400000) problems.push('Invoice date is in the future');\n}\n\n// ---------- 4. Routing decision ----------\nconst limit = Number(cfg.auto_approve_limit);\nconst overLimit = rec.total !== null && rec.total > limit;\nconst reasons = problems.concat(overLimit ? ['Total exceeds auto-approve limit (' + limit + ')'] : []);\nconst needsApproval = reasons.length > 0;\n\n// ---------- 5. Message for the approver ----------\nconst money = (rec.currency ? rec.currency + ' ' : '') + (rec.total !== null ? rec.total.toFixed(2) : 'n/a');\nconst approvalText = [\n  '🧾 Invoice needs your approval',\n  '',\n  'Vendor: ' + (rec.vendor || '?'),\n  'Invoice #: ' + (rec.invoice_number || '?'),\n  'Date: ' + (rec.invoice_date || '?'),\n  'Total: ' + money,\n  'Summary: ' + (rec.summary || '-'),\n  '',\n  reasons.length ? '⚠️ Flags:\\n- ' + reasons.join('\\n- ') : '✅ All validation checks passed',\n  '',\n  'File: ' + fileName,\n].join('\\n');\n\nreturn {\n  json: {\n    decision_id: Math.random().toString(36).slice(2, 8),\n    file_name: fileName,\n    ...rec,\n    line_items: lineItems,\n    validation_status: problems.length ? 'FAIL' : 'PASS',\n    validation_notes: problems.join('; '),\n    review_reasons: reasons.join('; '),\n    needs_approval: needsApproval,\n    approval_text: approvalText,\n  },\n};"
+      },
+      "id": "c60ba260-06a8-4f4c-9708-0120e958cb65",
+      "name": "Parse & Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1136,
+        336
+      ],
+      "notesInFlow": true,
+      "notes": "Parses AI JSON, checks the maths, applies the limit"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const r = $json;\nconst money = (r.currency ? r.currency + ' ' : '') + (r.total === null || r.total === undefined ? 'n/a' : Number(r.total).toFixed(2));\nconst has = (v) => v !== null && v !== undefined;\nconst lines = (Array.isArray(r.line_items) ? r.line_items : []).map((li) =>\n  '- ' + (li.description || 'item') + (has(li.quantity) ? ' x ' + li.quantity : '') + (has(li.unit_price) ? ' @ ' + li.unit_price : '') + ' = ' + (has(li.amount) ? li.amount : '?'));\n\nconst md = [\n  '**Vendor:** ' + (r.vendor || '?'),\n  '**Invoice #:** ' + (r.invoice_number || '?'),\n  '**Invoice date:** ' + (r.invoice_date || '?'),\n  '**Total:** ' + money + (has(r.subtotal) ? ' (subtotal ' + r.subtotal + ', tax ' + (has(r.tax) ? r.tax : 0) + ')' : ''),\n  '**Validation:** ' + (r.validation_status || '?') + (r.validation_notes ? ' - ' + r.validation_notes : ''),\n  r.review_reasons ? '**Review reasons:** ' + r.review_reasons : '',\n  '**Summary:** ' + (r.summary || '-'),\n  '',\n  '**Line items**',\n  lines.length ? lines.join('\\n') : '- none extracted',\n  '',\n  '_Source file: ' + (r.file_name || '?') + ' | created by n8n_',\n].filter((l, i, a) => !(l === '' && i > 0 && a[i - 1] === '')).join('\\n');\n\nreturn {\n  json: {\n    ...r,\n    task_name: (r.invoice_number || 'no number') + ' | ' + (r.vendor || 'unknown vendor') + ' | ' + money,\n    task_markdown: md,\n    task_priority: r.validation_status === 'FAIL' ? 2 : null,\n  },\n};"
+      },
+      "id": "01f3af39-5f19-46ba-84bc-9895e850d97b",
+      "name": "Build ClickUp Task",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        336
+      ],
+      "notesInFlow": true,
+      "notes": "Task title + markdown description"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.clickup.com/api/v2/list/{{ $('Config').first().json.clickup_list_id }}/task",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('Config').first().json.clickup_api_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.assign(\n  { name: $json.task_name, markdown_description: $json.task_markdown, status: $('Config').first().json.status_submitted },\n  $json.task_priority ? { priority: $json.task_priority } : {}\n)) }}",
+        "options": {}
+      },
+      "id": "5a736a5c-0e40-4c2e-af7f-054c7d48dc96",
+      "name": "Create ClickUp Task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1584,
+        336
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "notesInFlow": true,
+      "notes": "Task is born in 'Submitted' - it exists even if the workflow later fails"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// ClickUp's reply replaced our item, so put the original PDF back on it for the upload step\nreturn {\n  json: { task_id: $json.id, task_url: $json.url },\n  binary: $('Prepare PDF').first().binary,\n};"
+      },
+      "id": "45b4486f-9b38-43d2-9405-4b7ce7870087",
+      "name": "Re-attach PDF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1808,
+        336
+      ],
+      "notesInFlow": true,
+      "notes": "Puts the original PDF back on the item"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.clickup.com/api/v2/task/{{ $json.task_id }}/attachment",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('Config').first().json.clickup_api_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "attachment",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2171d04a-6905-4862-ab96-1153c6671a24",
+      "name": "Attach PDF to Task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2032,
+        336
+      ],
+      "notesInFlow": true,
+      "onError": "continueRegularOutput",
+      "notes": "Non-fatal: a failed upload never stops the pipeline"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Rebuild one item that has everything later steps need: invoice fields + ClickUp task id/url\nconst rec = $('Build ClickUp Task').first().json;\nconst task = $('Create ClickUp Task').first().json;\nreturn { json: { ...rec, task_id: task.id, task_url: task.url, attach_ok: !$json.error } };"
+      },
+      "id": "692bea9f-333a-4c75-96d0-3b95bde93ef3",
+      "name": "Task Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2256,
+        336
+      ],
+      "notesInFlow": true,
+      "notes": "One item with invoice fields + task id/url for everything downstream"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "24f8568c-eb2a-453b-bbaa-ce15104a61ff",
+              "leftValue": "={{ $json.needs_approval }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "80c39d48-b222-456e-9195-9dff861b9dcb",
+      "name": "Needs Approval?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2480,
+        336
+      ],
+      "notesInFlow": true,
+      "notes": "true = flagged or over limit -> human. false = auto-approve."
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://api.clickup.com/api/v2/task/{{ $json.task_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('Config').first().json.clickup_api_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $('Config').first().json.status_reviewing }) }}",
+        "options": {}
+      },
+      "id": "1879d595-a260-493a-bbc2-951d99e3d49a",
+      "name": "Move to Reviewing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2704,
+        240
+      ],
+      "notesInFlow": true,
+      "notes": "Task shows 'Reviewing' while the email is out"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "796c7615-64fa-4916-a0c9-74ca8f52277a",
+              "name": "decision",
+              "value": "AUTO_APPROVED",
+              "type": "string"
+            },
+            {
+              "id": "bb1fb273-3714-4b1e-a649-c44ed97773c4",
+              "name": "decided_by",
+              "value": "system",
+              "type": "string"
+            },
+            {
+              "id": "5c4cd58f-0cf1-4730-b7e6-ed2c54fe3e49",
+              "name": "decided_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "2077b863-afdd-4458-a690-9124e360b961",
+              "name": "target_status",
+              "value": "={{ $('Config').first().json.status_approved }}",
+              "type": "string"
+            },
+            {
+              "id": "48716929-8edb-4862-89e0-6014ba4ce3eb",
+              "name": "comment_text",
+              "value": "={{ 'Auto-approved by the workflow: all validation checks passed and the total is under the limit of ' + $('Config').first().json.auto_approve_limit + '.' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "6794315a-37d6-4aa7-8cdc-6290a81d575c",
+      "name": "Mark Auto-Approved",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3264,
+        512
+      ],
+      "notesInFlow": true,
+      "notes": "Clean + under the limit: straight to Approved"
+    },
+    {
+      "parameters": {},
+      "id": "22232e70-f2d1-41a9-8c53-d791355057ca",
+      "name": "Final Decision",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        4048,
+        336
+      ],
+      "notesInFlow": true,
+      "notes": "Both paths meet here (human decision or auto-approval)"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://api.clickup.com/api/v2/task/{{ $('Final Decision').first().json.task_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('Config').first().json.clickup_api_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $('Final Decision').first().json.target_status }) }}",
+        "options": {}
+      },
+      "id": "07a4c002-fed6-4fe0-ad91-d0621721080d",
+      "name": "Update ClickUp Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4272,
+        336
+      ],
+      "notesInFlow": true,
+      "notes": "Moves the task to its final status"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.clickup.com/api/v2/task/{{ $('Final Decision').first().json.task_id }}/comment",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('Config').first().json.clickup_api_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ comment_text: $('Final Decision').first().json.comment_text, notify_all: false }) }}",
+        "options": {}
+      },
+      "id": "01ea8108-0e9b-4a88-81f8-b8bee3632702",
+      "name": "Add ClickUp Comment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4496,
+        336
+      ],
+      "notesInFlow": true,
+      "notes": "Decision + reviewer comment saved on the task = audit trail"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Config').first().json.approver_email }}",
+        "subject": "={{ ({ APPROVED: '✅ Approved', AUTO_APPROVED: '🤖 Auto-approved', CHANGES_NEEDED: '✏️ Changes needed', REJECTED: '❌ Rejected', EXPIRED: '⏰ Still waiting' }[$('Final Decision').first().json.decision] || 'ℹ️ Processed') + ': ' + $('Final Decision').first().json.invoice_number + ' | ' + $('Final Decision').first().json.vendor }}",
+        "emailType": "text",
+        "message": "={{ 'Invoice ' + $('Final Decision').first().json.invoice_number + ' from ' + $('Final Decision').first().json.vendor + ' (' + $('Final Decision').first().json.currency + ' ' + $('Final Decision').first().json.total + ') is now \"' + $('Final Decision').first().json.target_status + '\" in ClickUp.'\n  + ($('Final Decision').first().json.reviewer_comment ? '\\n\\nComment: ' + $('Final Decision').first().json.reviewer_comment : '')\n  + ($('Final Decision').first().json.attach_ok ? '' : '\\n\\nNote: the PDF could not be attached to the task.')\n  + '\\n\\nTask: ' + $('Final Decision').first().json.task_url }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "c1103b5b-7ea6-4b86-a29e-4efd4501e98d",
+      "name": "Notify Outcome",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        4720,
+        336
+      ],
+      "notesInFlow": true,
+      "webhookId": "4d714848-e1b6-44ec-baef-62c14666fd18",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Se7e0yNyWMsBIvrd",
+          "name": "Gmail account"
+        }
+      },
+      "notes": "Summary email with the task link"
+    },
+    {
+      "parameters": {
+        "content": "## ① Intake\n### Upload a PDF. Prepare PDF normalises it.",
+        "height": 190,
+        "width": 412,
+        "color": 7
+      },
+      "id": "cc1eadd8-8c6a-4b5b-a64d-5a605d85f693",
+      "name": "Note: ① Intake",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ② AI extraction\n### PDF text -> LLM in JSON mode (temperature 0) -> structured fields. Provider is one node - swappable.",
+        "height": 190,
+        "width": 620,
+        "color": 4
+      },
+      "id": "50bbd30d-ce86-4ab2-b311-b7e2199f1e30",
+      "name": "Note: ② AI extraction",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ③ Validate + file as SUBMITTED\n### Checks the maths and the limit, then creates the ClickUp task and attaches the PDF. The task exists from this point on.",
+        "height": 190,
+        "width": 1320,
+        "color": 6
+      },
+      "id": "ab645192-eb9d-4d31-8959-9a5dd526726f",
+      "name": "Note: ③ Validate + file as SUBMITTED",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1088,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ④ Human review by email buttons\n### Task -> REVIEWING. The email has three buttons; each one calls this execution's private resume URL, so the workflow pauses until you click. The browser then shows a confirmation page. Clean invoices under the limit skip this and are auto-approved.",
+        "height": 190,
+        "width": 1500,
+        "color": 5
+      },
+      "id": "642bd3ab-2c8b-4c5d-8a8a-5a50958ab6d3",
+      "name": "Note: ④ Human review by email",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2432,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ⑤ Sync + notify\n### Move the task to its final status, post the decision as a comment, email a summary.",
+        "height": 190,
+        "width": 1100,
+        "color": 3
+      },
+      "id": "5dd63919-1474-4cfc-93cc-2bf0ea4ae133",
+      "name": "Note: ⑤ Sync + notify",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3968,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fd053177-223d-4a0d-ae0c-2310fe0ad158",
+              "name": "link_base",
+              "value": "={{ $execution.resumeUrl }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b38afdd5-6be6-4d10-9d32-8e9c795ac401",
+      "name": "Review Link",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2928,
+        240
+      ],
+      "notesInFlow": true,
+      "notes": "Captures this execution's private resume URL - the buttons call it"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const ctx = $('Task Context').first().json;\nconst base = String($json.link_base || '');\nconst link = (action) => base + (base.includes('?') ? '&' : '?') + 'action=' + action;\nconst esc = (s) => String(s === null || s === undefined ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst btn = (label, action, color) =>\n  '<a href=\"' + link(action) + '\" style=\"display:inline-block;padding:12px 20px;margin:4px 8px 4px 0;background:' + color +\n  ';color:#ffffff;text-decoration:none;border-radius:6px;font-weight:bold;font-family:Arial,sans-serif;font-size:14px;\">' + label + '</a>';\n\nconst money = (ctx.currency ? ctx.currency + ' ' : '') + (ctx.total === null || ctx.total === undefined ? 'n/a' : ctx.total);\nconst html = [\n  '<div style=\"font-family:Arial,sans-serif;font-size:14px;color:#222;max-width:560px;\">',\n  '<pre style=\"font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap;margin:0 0 12px 0;\">' + esc(ctx.approval_text) + '</pre>',\n  '<p style=\"margin:0 0 16px 0;\">ClickUp task: <a href=\"' + esc(ctx.task_url) + '\">' + esc(ctx.task_url) + '</a></p>',\n  '<p style=\"margin:0 0 12px 0;\">' +\n    btn('✅ Approve', 'approve', '#2e7d32') +\n    btn('✏️ Request changes', 'changes', '#ef6c00') +\n    btn('❌ Reject', 'reject', '#c62828') + '</p>',\n  '<p style=\"color:#777;font-size:12px;margin:0;\">Click once - the decision is recorded in ClickUp. The buttons open n8n, so use them on the computer that runs n8n.</p>',\n  '</div>',\n].join('');\n\nreturn {\n  json: {\n    email_subject: 'Review needed: ' + (ctx.invoice_number || '?') + ' | ' + (ctx.vendor || 'unknown vendor') + ' | ' + money,\n    email_html: html,\n  },\n};"
+      },
+      "id": "11a4c506-c7b7-4bbe-a2df-4a7797a93536",
+      "name": "Build Review Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3152,
+        240
+      ],
+      "notesInFlow": true,
+      "notes": "HTML email: details + three buttons (Approve / Request changes / Reject)"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Config').first().json.approver_email }}",
+        "subject": "={{ $json.email_subject }}",
+        "message": "={{ $json.email_html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "841ee3cb-3c2f-4ede-8dc7-e652b44dc61e",
+      "name": "Email Review Request",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3376,
+        240
+      ],
+      "notesInFlow": true,
+      "webhookId": "f2609d75-747f-4110-b39c-a1d0e8cbee6c",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Se7e0yNyWMsBIvrd",
+          "name": "Gmail account"
+        }
+      },
+      "notes": "Sends the review email"
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "responseMode": "lastNode",
+        "limitWaitTime": true,
+        "resumeAmount": "={{ $('Config').first().json.approval_timeout_minutes }}",
+        "resumeUnit": "minutes",
+        "options": {
+          "responseContentType": "text/html; charset=utf-8",
+          "responsePropertyName": "page_html"
+        }
+      },
+      "id": "18e75bd7-3e47-4b3d-9a7a-3907c5003067",
+      "name": "Wait for Review Click",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3600,
+        240
+      ],
+      "webhookId": "8d357012-0ceb-45c4-9d5d-3537184182b1",
+      "notesInFlow": true,
+      "notes": "PAUSES until a button is clicked or the time limit passes (then: EXPIRED). The browser gets the page_html built by the last node."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const ctx = $('Task Context').first().json;\nconst cfg = $('Config').first().json;\n// The item that resumed the Wait node. It has a 'query' object when a button was clicked,\n// and no 'query' at all when the wait timed out.\nconst w = $('Wait for Review Click').first().json;\nconst action = String((w.query && w.query.action) || '').toLowerCase();\nconst who = cfg.approver_email;\n\nconst map = {\n  approve: { decision: 'APPROVED', status: cfg.status_approved, text: 'Approved by ' + who + ' via the email button.' },\n  changes: { decision: 'CHANGES_NEEDED', status: cfg.status_changes_needed,\n             text: 'Changes requested by ' + who + ' via the email button.' + (ctx.review_reasons ? '\\nFlagged at review: ' + ctx.review_reasons : '') + '\\nPlease correct the invoice and upload it again.' },\n  reject:  { decision: 'REJECTED', status: cfg.status_rejected, text: 'Rejected by ' + who + ' via the email button.' },\n};\nconst m = map[action];\n\nconst decision = m ? m.decision : 'EXPIRED';\nreturn {\n  json: {\n    ...ctx,\n    decision,\n    decided_by: m ? who : 'no response',\n    decided_at: new Date().toISOString(),\n    reviewer_comment: '',\n    target_status: m ? m.status : cfg.status_reviewing,\n    comment_text: m ? m.text : 'No valid decision received within ' + cfg.approval_timeout_minutes + ' minutes. Task left in \"' + cfg.status_reviewing + '\".',\n  },\n};"
+      },
+      "id": "c38361c2-6f2d-41f0-a87e-d967e783d5b8",
+      "name": "Decision from Link",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3824,
+        240
+      ],
+      "notesInFlow": true,
+      "notes": "approve / changes / reject -> matching ClickUp status. No click -> EXPIRED (stays Reviewing)"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Last node of the run: its 'page_html' is what the reviewer's browser shows after clicking a button\nconst f = $('Final Decision').first().json;\nconst esc = (s) => String(s === null || s === undefined ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst icon = { APPROVED: '✅', AUTO_APPROVED: '🤖', CHANGES_NEEDED: '✏️', REJECTED: '❌', EXPIRED: '⏰' }[f.decision] || 'ℹ️';\nconst page = '<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>' +\n  '<body style=\"font-family:Arial,sans-serif;text-align:center;margin-top:15vh;color:#222;\">' +\n  '<h2>' + icon + ' Decision recorded</h2>' +\n  '<p>Invoice <b>' + esc(f.invoice_number) + '</b> is now <b>' + esc(f.target_status) + '</b> in ClickUp.</p>' +\n  '<p><a href=\"' + esc(f.task_url) + '\">Open the task</a></p>' +\n  '<p style=\"color:#777;\">You can close this tab.</p></body></html>';\nreturn { json: { page_html: page } };"
+      },
+      "id": "72e51c8b-e3cb-493e-a231-d7beeda59920",
+      "name": "Thanks Page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4944,
+        336
+      ],
+      "notesInFlow": true,
+      "notes": "Builds the confirmation page the browser shows (Wait node returns this node's page_html)"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Upload Form": {
+      "main": [
+        [
+          {
+            "node": "Prepare PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Text": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "LLM Extract Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Extract Fields": {
+      "main": [
+        [
+          {
+            "node": "Parse & Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Validate": {
+      "main": [
+        [
+          {
+            "node": "Build ClickUp Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build ClickUp Task": {
+      "main": [
+        [
+          {
+            "node": "Create ClickUp Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create ClickUp Task": {
+      "main": [
+        [
+          {
+            "node": "Re-attach PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Re-attach PDF": {
+      "main": [
+        [
+          {
+            "node": "Attach PDF to Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach PDF to Task": {
+      "main": [
+        [
+          {
+            "node": "Task Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Task Context": {
+      "main": [
+        [
+          {
+            "node": "Needs Approval?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Approval?": {
+      "main": [
+        [
+          {
+            "node": "Move to Reviewing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Auto-Approved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Auto-Approved": {
+      "main": [
+        [
+          {
+            "node": "Final Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Decision": {
+      "main": [
+        [
+          {
+            "node": "Update ClickUp Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update ClickUp Status": {
+      "main": [
+        [
+          {
+            "node": "Add ClickUp Comment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add ClickUp Comment": {
+      "main": [
+        [
+          {
+            "node": "Notify Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move to Reviewing": {
+      "main": [
+        [
+          {
+            "node": "Review Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review Link": {
+      "main": [
+        [
+          {
+            "node": "Build Review Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Review Email": {
+      "main": [
+        [
+          {
+            "node": "Email Review Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Review Request": {
+      "main": [
+        [
+          {
+            "node": "Wait for Review Click",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Review Click": {
+      "main": [
+        [
+          {
+            "node": "Decision from Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decision from Link": {
+      "main": [
+        [
+          {
+            "node": "Final Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Outcome": {
+      "main": [
+        [
+          {
+            "node": "Thanks Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "513ed4ac-8c31-42ab-ac27-1c98e6801b72",
+  "meta": {
+    "instanceId": "e6b3b04de3614afa1c83bc6ae113bec6be62ea13e27a3dee119b78ecea72b731"
+  },
+  "nodeGroups": [],
+  "id": "rCN4IUQx87WZnFMA",
+  "tags": []
+}

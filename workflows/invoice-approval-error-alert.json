@@ -1,0 +1,120 @@
+{
+  "name": "Invoice Pipeline - Error Alert (Gmail)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "ac88263f-f6cb-4fd4-a03f-ade657a5c394",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6fbc9a87-5688-4789-bbf0-29b9e7ea030c",
+              "name": "alert_email",
+              "value": "your_email_here",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "c5f7ec62-b1e2-4339-9be9-d0565a4ba550",
+      "name": "Alert Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.alert_email }}",
+        "subject": "={{ '🚨 Workflow failed: ' + $json.workflow.name }}",
+        "emailType": "text",
+        "message": "={{ 'Node: ' + ($json.execution.lastNodeExecuted || '?') + '\\nError: ' + (($json.execution.error && $json.execution.error.message) || 'unknown') + '\\nExecution: ' + ($json.execution.url || $json.execution.id) }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "5783f71b-8304-40ff-b5aa-19c59a2aee88",
+      "name": "Send Failure Alert",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        240
+      ],
+      "webhookId": "812fa0ff-18bb-4ce8-b92e-ea7fd8481a80",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Se7e0yNyWMsBIvrd",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Maintenance: failure alert\nIn the main workflow open Settings -> Error workflow and pick this one. Any crash (bad key, LLM down, ClickUp error) emails you.",
+        "height": 170,
+        "width": 700,
+        "color": 2
+      },
+      "id": "be9ed520-2c3a-450c-bee9-87d5722648ed",
+      "name": "Note: Maintenance: failure alert",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Alert Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert Config": {
+      "main": [
+        [
+          {
+            "node": "Send Failure Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "9e88ce35-12b4-4e06-ab3d-9c31e671ca37",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e6b3b04de3614afa1c83bc6ae113bec6be62ea13e27a3dee119b78ecea72b731"
+  },
+  "nodeGroups": [],
+  "id": "JyZWQPNsupEJrfF4",
+  "tags": []
+}
